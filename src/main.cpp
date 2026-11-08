@@ -1,8 +1,9 @@
 #include <Arduino.h>
 
-// Wire each button's opposite leg to one of these pins.
-// The common side of the button bank should be tied together and connected to A0.
-// Then, one wire at a time, the probe is connected to that common bus.
+// Connection idea:
+// - All button commons are tied together and connected to A0.
+// - Each unique button leg is connected to its own Arduino pin: D2..D9.
+// - The sketch waits for a button press and then reports which one matched.
 const uint8_t buttonPins[] = {2, 3, 4, 5, 6, 7, 8, 9};
 const uint8_t probePin = A0;
 const uint8_t numButtons = sizeof(buttonPins) / sizeof(buttonPins[0]);
@@ -14,49 +15,40 @@ void releaseAllPins() {
   pinMode(probePin, INPUT);
 }
 
-void printButtonState(uint8_t index, bool matched) {
-  Serial.print("Button ");
-  Serial.print(index + 1);
-  Serial.print(" (pin ");
-  Serial.print(buttonPins[index]);
-  Serial.print(")");
-  Serial.println(matched ? " -> MATCH" : " -> no match");
+bool isProbeConnected() {
+  // With the common bus pulled down through 10k to GND, a pressed button
+  // will raise the A0 voltage significantly. This is a simple threshold check.
+  int value = analogRead(probePin);
+  return value > 3000;
 }
 
-void scanSingleWire() {
-  bool found = false;
+void waitForButtonPress() {
+  while (true) {
+    for (uint8_t i = 0; i < numButtons; ++i) {
+      releaseAllPins();
+      pinMode(buttonPins[i], OUTPUT);
+      digitalWrite(buttonPins[i], HIGH);
+      delay(10);
 
-  Serial.println("Testing one unknown wire against all button pins...");
-  Serial.println("Press each button in turn and watch for a MATCH.");
+      if (isProbeConnected()) {
+        Serial.print("SUCCESS: Wire matches button ");
+        Serial.print(i + 1);
+        Serial.print(" (pin ");
+        Serial.print(buttonPins[i]);
+        Serial.println(")");
 
-  for (uint8_t i = 0; i < numButtons; ++i) {
-    releaseAllPins();
-    pinMode(buttonPins[i], OUTPUT);
-    digitalWrite(buttonPins[i], HIGH);
-    delay(10);
+        digitalWrite(buttonPins[i], LOW);
+        pinMode(buttonPins[i], INPUT);
+        return;
+      }
 
-    int value = analogRead(probePin);
-    bool matched = value > 3000;
-    printButtonState(i, matched);
-
-    if (matched) {
-      found = true;
-      Serial.print("This wire belongs to button number ");
-      Serial.println(i + 1);
-      Serial.println("---");
+      digitalWrite(buttonPins[i], LOW);
+      pinMode(buttonPins[i], INPUT);
+      delay(5);
     }
 
-    digitalWrite(buttonPins[i], LOW);
-    pinMode(buttonPins[i], INPUT);
-    delay(25);
-  }
-
-  releaseAllPins();
-
-  if (!found) {
-    Serial.println("No button matched this wire.");
-    Serial.println("Check that the wire is on the common side of the button panel and that you pressed each button one at a time.");
-    Serial.println("---");
+    // Idle while waiting for a press.
+    delay(20);
   }
 }
 
@@ -68,16 +60,13 @@ void setup() {
 
   releaseAllPins();
 
-  Serial.println("Button lead matcher ready");
-  Serial.println("Connection idea:");
-  Serial.println("- Tie all common button legs together.");
-  Serial.println("- Connect that common to A0.");
-  Serial.println("- Connect each unique button leg to pins 2..9.");
-  Serial.println("- Plug one unknown wire into the common and press buttons one by one.");
+  Serial.println("Button tester ready.");
+  Serial.println("Connect the common side of the panel to A0 through a 10k pull-down to GND.");
+  Serial.println("Press a button and the sketch will print SUCCESS for the matching button.");
   Serial.println("---");
 }
 
 void loop() {
-  scanSingleWire();
-  delay(1000);
+  waitForButtonPress();
+  delay(250);
 }
